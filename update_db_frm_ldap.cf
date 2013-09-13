@@ -1,0 +1,21 @@
+%config = (
+	# oracle
+	"oracle_base" => "/home/oracle",
+	"oracle_home" => "/home/oracle/app/oracle/product/11.2.0.1/client_1",
+	"connect_str" => "dbi:Oracle:host=ipaddr;port=port;sid=SID",
+	"user" => "user",
+	"pass" => "pass",
+	"insert_stmt" => "INSERT INTO TABLE_NAME (VAL1, VAL2) VALUES (?, ?)",
+
+	"truncate_table" => "yes",
+	"truncate_stmt" => "TRUNCATE TABLE TABLE_NAME",
+
+	# ldap
+	"ldap_host" => "ldaps://sgldap.domain.net",
+	"ldap_binddn" => "binddn",
+	"ldap_pass" => "bindpass",
+	"ldap_base" => "dc=domain,dc=org",
+	"ldap_filter" => "filter",
+	"ldap_attrs" => [qw/attr1 attr2/],
+	"skip_if_attrs_empty" => "yes",
+);
