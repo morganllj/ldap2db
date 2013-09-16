@@ -1,0 +1,9 @@
+
+update_db_frm_ldap.pl
+Morgan Jones (morgan@morganjones.org)
+
+Pull data from LDAP and insert into an Oracle database table.  
+
+Currently only allows adding and/or truncating table.  Be sure your insert specifies the same number of attributes as you specify in your ldap search.
+
+This is lightly tested but in production running nightly for a small data set.
