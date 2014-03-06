@@ -36,33 +36,20 @@ my $dbh = DBI->connect($config{connect_str}, $config{user}, $config{pass}) or
   die $DBI::errstr;
 
 if ($config{truncate_table} =~ /yes/i) {
-
     if (ref $config{truncate_stmt} eq "ARRAY") {
 	for my $stmt (@{$config{truncate_stmt}}) {
 	    truncate_table($stmt);
 	}
-
     } else {
 	truncate_table($config{truncate_stmt});
     }
-
-
-    # print "truncating table: $config{truncate_stmt}\n";
-    # my $sth;
-    # $sth = $dbh->prepare($config{truncate_stmt})
-    #   or die "problem preparing truncate: " . $sth->errstr;
-    # $sth->execute() or die "problem truncating: " . $sth->errstr
-    #   if (!exists $opts{n})
 }
 
 my $ldap=Net::LDAP->new($config{ldap_host});
 my $bind_rslt = $ldap->bind($config{ldap_binddn}, password => $config{ldap_pass});
 $bind_rslt->code && die "unable to bind as $config{ldap_binddn}";
 
-
-
-# #TODO: verify length of arrays match
-
+# TODO: verify length of arrays match
 if (ref $config{ldap_attrs} eq "ARRAY") {
     die "insert_stmt must be an array if ldap_attrs is an array"
       if (ref $config{insert_stmt} ne "ARRAY");
@@ -82,8 +69,6 @@ if (ref $config{insert_stmt} eq "ARRAY") {
 } else {
     insert_entries($config{insert_stmt}, @{$config{ldap_attrs}});
 }
-
-
 
 # #$dbh->commit;
 $dbh->disconnect;
@@ -136,13 +121,8 @@ sub insert_entries {
 
 	    if ( ($#attr_values < 0 )&&
 		 exists $config{skip_if_attrs_empty} && $config{skip_if_attrs_empty} =~ /yes/i) {
-#	    $next = 1
-#	      if (($entry->get_value($attr))[0] =~ /^\s*$/ && 
-#		  exists $config{skip_if_attrs_empty} && $config{skip_if_attrs_empty} =~ /yes/i);
 		$next = 1;
 	    } else {
-#		print "pushing ", Dumper @attr_values;
-#		push @values, @attr_values;
 		if ($#attr_values > -1 && $attr_values[0] !~ /^\s*$/) {
 		    push @{$values[$i]}, @attr_values;
 		} else {
@@ -156,34 +136,6 @@ sub insert_entries {
 
 	next
 	  if ($next);
-
-#	print "values:\n", Dumper @values;
-#	print "entering for..\n";
-
-	# my $j=0;
-	# for (@values) {
-	#     print "inserting into table: $insert_stmt\n";
-	    
-	#     if (grep /$ldap_attrs[$j]/i, @attr_keys) {
-	# 	my $k=0;
-	# 	while ($k <= $longest_attr_list) {
-	# 	    print $values[$j][0], " ";
-	# 	    $k++;
-	# 	}
-	#     } elsif (ref $values[$j] ne "ARRAY") {
-	# 	print "empty";
-	#     } else {
-	# 	my $k=0;
-	# 	while ($k <= $longest_attr_list) {
-	# 	    print $values[$j][$k], " ";
-	# 	    $k++;
-	# 	}
-	#     }
-	#     print "\n";
-	#     $j++;
-	# }
-
-
 
 	my $j=0;
 	my $k=0;
@@ -227,24 +179,13 @@ sub insert_entries {
 	    $k++;
 	}
 
-
-	# 	# print "executing insert with values ", join ' ', @values, "\n"
-	# 	#   if (exists $opts{d});
-	# 	print "executing insert with values ", join ' ', @insert_values, "\n"
-	# 	  if (exists $opts{d});
-		
-	# 	$insert_sth->execute(@values) or die "problem executing statement: " . $insert_sth->errstr
-	# 	  if (!exists $opts{n});
-		
 	$count++;
 
 	print "\n*****\n"
 	  if (exists $opts{d});
 
      }
-#     print "$count entries inserted.\n";
-
-
+     print "$count entries inserted.\n";
 }
 
 
