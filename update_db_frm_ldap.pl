@@ -9,8 +9,17 @@ use Data::Dumper;
 
 our %config;
 
+$|=1;
+
 sub insert_entries;
 sub truncate_table;
+
+# suppress qw warnings (http://stackoverflow.com/questions/19573977/disable-warning-about-literal-commas-in-qw-list)
+$SIG{__WARN__} = sub {
+    return 
+        if $_[0] =~ m{ separate words with commas };
+    return CORE::warn @_;
+};
 
 my %opts;
 getopts('ndc:', \%opts);
@@ -34,6 +43,8 @@ $ENV{ORACLE_HOME} = $config{oracle_home};
 
 my $dbh = DBI->connect($config{connect_str}, $config{user}, $config{pass}) or
   die $DBI::errstr;
+
+$dbh->{AutoCommit} = 0;
 
 if ($config{truncate_table} =~ /yes/i) {
     if (ref $config{truncate_stmt} eq "ARRAY") {
@@ -70,7 +81,7 @@ if (ref $config{insert_stmt} eq "ARRAY") {
     insert_entries($config{insert_stmt}, @{$config{ldap_attrs}});
 }
 
-# #$dbh->commit;
+$dbh->commit;
 $dbh->disconnect;
 
 
@@ -90,17 +101,38 @@ sub truncate_table {
 
 
 sub insert_entries {
-    my ($insert_stmt, @ldap_attrs) = @_;
+    my ($insert_stmt, @in_ldap_attrs) = @_;
 
     my @attr_keys;
+    my %gen_keys;
+    my @ldap_attrs;
 
-    for (@ldap_attrs) {
-	if (/singlekey:/i) {
-	    s/singlekey://i;
-	    push @attr_keys, $_;
-	}
+
+    $insert_stmt =~ /insert\s*into\s*[^\(]+\(([^\)]+)\)/i;
+
+    my @db_cols = split /\s*,\s*/, $1;
+    for (@db_cols) {
+	s/^\s*//;
+	s/\s*$//;
     }
 
+    my $count2 = 0;
+    for (@in_ldap_attrs) {
+	if (/^singlekey:/i) {
+	    s/^singlekey://i;
+	    push @attr_keys, $_;
+	    push @ldap_attrs, $_;
+	} elsif (/^gen:/i) {
+	    s/^gen://i;
+	    @{$gen_keys{$db_cols[$count2]}} = split /\s*,\s*/;
+	    push @ldap_attrs, split /\s*,\s*/;
+	} else {
+	    push @ldap_attrs, $_;
+	}
+	$count2++
+    }
+
+#    print "about to search, attrs: ", join (' ', @ldap_attrs), "\n";
     print "\nsearching ldap: $config{ldap_filter}\n";
     my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$config{ldap_filter}, attrs => [@ldap_attrs]);
     $rslt->code && die "problem searching: ", $rslt->error;
@@ -137,10 +169,14 @@ sub insert_entries {
 	next
 	  if ($next);
 
+
+	print Dumper @values;
+
+
 	my $j=0;
 	my $k=0;
-	while ($k <= $longest_attr_list) {
 
+	while ($k <= $longest_attr_list) {
 	    my @insert_values;
 
 	    my $j=0;
@@ -162,8 +198,42 @@ sub insert_entries {
 	    }
 	    print "\n";
 
-	    print "inserting into table: $insert_stmt\n";
 
+
+
+# 	while ($k <= $longest_attr_list) {
+# 	    my @insert_values;
+
+# 	    my $j=0;
+#       #     for (@values) {
+# 	    for (@in_ldap_attrs) {
+# 		# TODO: get rid of @attr_keys since we have what we need in @in_ldap_attrs
+
+# 		if ($in_ldap_attrs[$i] =~ /^gen:/) {
+# #		    $db_cols
+# #		if (grep /$ldap_attrs[$j]/i, @attr_keys) {
+# 		} elsif (grep /$ldap_attrs[$j]/i, @attr_keys) {
+# 		    print $values[$j][0], " "
+# 		      if (exists $opts{d});
+# 		    push @insert_values, $values[$j][0]; 
+# 		} elsif (ref $values[$j] ne "ARRAY") {
+# 		    print "<empty> "
+# 		      if (exists $opts{d});
+# 		    push @insert_values, ""; 
+# 		} else {
+# 		    print $values[$j][$k], " "
+# 		      if (exists $opts{d});
+# 		    push @insert_values, $values[$j][$k];
+# 		}
+# 		$j++
+# 	    }
+# 	    print "\n";
+
+
+
+
+
+	    print "inserting into table: $insert_stmt\n";
 
 	    my $values_to_print = join ', ', @insert_values, "\n";
 	    $values_to_print =~ s/,\s*$//;
