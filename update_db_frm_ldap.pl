@@ -60,7 +60,12 @@ my $ldap=Net::LDAP->new($config{ldap_host});
 my $bind_rslt = $ldap->bind($config{ldap_binddn}, password => $config{ldap_pass});
 $bind_rslt->code && die "unable to bind as $config{ldap_binddn}";
 
+
+
+
 # TODO: verify length of arrays match
+
+# TODO: if (ref $config{ldap_filter} eq "ARRAY") {
 if (ref $config{ldap_attrs} eq "ARRAY") {
     die "insert_stmt must be an array if ldap_attrs is an array"
       if (ref $config{insert_stmt} ne "ARRAY");
@@ -73,7 +78,7 @@ if (ref $config{insert_stmt} eq "ARRAY") {
     if (ref $config{insert_stmt} eq "ARRAY") {
 	my $i=0;
 	for my $insert_stmt (@{$config{insert_stmt}}) {
-	    insert_entries($config{insert_stmt}->[$i], @{$config{ldap_attrs}->[$i]});
+	    insert_entries($config{insert_stmt}->[$i], $config{ldap_filter}->[$i], @{$config{ldap_attrs}->[$i]});
 	    $i++;
 	}
     }
@@ -101,7 +106,7 @@ sub truncate_table {
 
 
 sub insert_entries {
-    my ($insert_stmt, @in_ldap_attrs) = @_;
+    my ($insert_stmt, $ldap_filter, @in_ldap_attrs) = @_;
 
     my @attr_keys;
     my %gen_keys;
@@ -132,9 +137,10 @@ sub insert_entries {
 	$count2++
     }
 
-#    print "about to search, attrs: ", join (' ', @ldap_attrs), "\n";
-    print "\nsearching ldap: $config{ldap_filter}\n";
-    my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$config{ldap_filter}, attrs => [@ldap_attrs]);
+#    print "\nsearching ldap: $config{ldap_filter}\n";
+#    my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$config{ldap_filter}, attrs => [@ldap_attrs]);
+    print "\nsearching ldap: $ldap_filter\n";
+    my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$ldap_filter, attrs => [@ldap_attrs]);
     $rslt->code && die "problem searching: ", $rslt->error;
 
     my $count=0;
@@ -169,10 +175,6 @@ sub insert_entries {
 	next
 	  if ($next);
 
-
-	print Dumper @values;
-
-
 	my $j=0;
 	my $k=0;
 
@@ -197,41 +199,6 @@ sub insert_entries {
 		$j++
 	    }
 	    print "\n";
-
-
-
-
-# 	while ($k <= $longest_attr_list) {
-# 	    my @insert_values;
-
-# 	    my $j=0;
-#       #     for (@values) {
-# 	    for (@in_ldap_attrs) {
-# 		# TODO: get rid of @attr_keys since we have what we need in @in_ldap_attrs
-
-# 		if ($in_ldap_attrs[$i] =~ /^gen:/) {
-# #		    $db_cols
-# #		if (grep /$ldap_attrs[$j]/i, @attr_keys) {
-# 		} elsif (grep /$ldap_attrs[$j]/i, @attr_keys) {
-# 		    print $values[$j][0], " "
-# 		      if (exists $opts{d});
-# 		    push @insert_values, $values[$j][0]; 
-# 		} elsif (ref $values[$j] ne "ARRAY") {
-# 		    print "<empty> "
-# 		      if (exists $opts{d});
-# 		    push @insert_values, ""; 
-# 		} else {
-# 		    print $values[$j][$k], " "
-# 		      if (exists $opts{d});
-# 		    push @insert_values, $values[$j][$k];
-# 		}
-# 		$j++
-# 	    }
-# 	    print "\n";
-
-
-
-
 
 	    print "inserting into table: $insert_stmt\n";
 
