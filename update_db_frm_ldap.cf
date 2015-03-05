@@ -5,7 +5,8 @@
 	"connect_str" => "dbi:Oracle:host=ipaddr;port=port;sid=SID",
 	"user" => "user",
 	"pass" => "pass",
-	"insert_stmt" => "INSERT INTO TABLE_NAME (VAL1, VAL2) VALUES (?, ?)",
+	"insert_stmt" => [ "INSERT INTO TABLE_NAME (VAL1, VAL2, VAL3) VALUES (?, ?, ?)",
+		           "INSERT INTO TABLE_NAME2 (VAL4, VAL5, VAL6) VALUES (?, ?, ?)" ],
 
 	"truncate_table" => "yes",
 	"truncate_stmt" => "TRUNCATE TABLE TABLE_NAME",
@@ -16,6 +17,14 @@
 	"ldap_pass" => "bindpass",
 	"ldap_base" => "dc=domain,dc=org",
 	"ldap_filter" => "filter",
-	"ldap_attrs" => [qw/attr1 attr2/],
+	"ldap_attrs" => [[qw/attr1 attr2 gen:attr3/],
+		     	 [qw/singlekey:attr5 attr6 attr7/]],
 	"skip_if_attrs_empty" => "yes",
+	}
 );
+
+sub gen_VAL3 {
+
+    # do something
+    return;
+}
