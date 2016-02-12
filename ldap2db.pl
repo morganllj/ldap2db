@@ -21,6 +21,9 @@ $SIG{__WARN__} = sub {
     return CORE::warn @_;
 };
 
+# my %num2mon = qw( 1 JAN 2 FEB 3 MAR 4 APR 5 MAY 6 JUN 7 JUL 8 AUG 9 SEP 
+#                  10 OCT 11 NOV 12 DEC );
+
 my %opts;
 getopts('ndc:', \%opts);
 
@@ -56,11 +59,17 @@ if ($config{truncate_table} =~ /yes/i) {
     }
 }
 
+for my $procedure (@{$config{pre_stored_procedures}}) {
+    print "calling pre stored procedure $procedure\n";
+    if (!($dbh->do("call $procedure"))) {
+	printf("Error executing stored procedure: MySQL error %d (SQLSTATE %s)\n %s\n",
+	       $dbh->err,$dbh->state,$dbh->errstr); 
+    }
+}
+
 my $ldap=Net::LDAP->new($config{ldap_host});
 my $bind_rslt = $ldap->bind($config{ldap_binddn}, password => $config{ldap_pass});
 $bind_rslt->code && die "unable to bind as $config{ldap_binddn}";
-
-
 
 
 # TODO: verify length of arrays match
@@ -86,10 +95,16 @@ if (ref $config{insert_stmt} eq "ARRAY") {
     insert_entries($config{insert_stmt}, @{$config{ldap_attrs}});
 }
 
+for my $procedure (@{$config{post_stored_procedures}}) {
+    print "calling post stored procedure $procedure\n";
+    if (!($dbh->do("call $procedure"))) {
+	printf("Error executing stored procedure: MySQL error %d (SQLSTATE %s)\n %s\n",
+	       $dbh->err,$dbh->state,$dbh->errstr); 
+    }
+}
+
 $dbh->commit;
 $dbh->disconnect;
-
-
 
 print "\nfinished at ", `date`;
 
@@ -111,7 +126,6 @@ sub insert_entries {
     my @attr_keys;
     my %gen_keys;
     my @ldap_attrs;
-
 
     $insert_stmt =~ /insert\s*into\s*[^\(]+\(([^\)]+)\)/i;
 
@@ -137,8 +151,6 @@ sub insert_entries {
 	$count2++
     }
 
-#    print "\nsearching ldap: $config{ldap_filter}\n";
-#    my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$config{ldap_filter}, attrs => [@ldap_attrs]);
     print "\nsearching ldap: $ldap_filter\n";
     my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$ldap_filter, attrs => [@ldap_attrs]);
     $rslt->code && die "problem searching: ", $rslt->error;
@@ -153,6 +165,24 @@ sub insert_entries {
 	my $i=0;
 	for my $attr (@ldap_attrs) {
 	    my @attr_values = $entry->get_value($attr);
+
+	    if (exists $config{normalize}) {
+		for my $n (@{$config{normalize}}) {
+		    if (exists $n->{regex}) {
+			for my $r (@{$n->{regex}}) {
+			    if ($attr =~ /$r/i) {
+				my $j = 0;
+				for (@attr_values) {
+				    if (exists $n->{sub}) {
+					$attr_values[$j] = $n->{sub}->($attr, $attr_values[$j]);
+				    }
+				}
+			    }
+			}
+		    }
+		}
+	    }
+
 
 	    die "multiple values for singlekey attr $attr in " . $entry->dn()
 	      if (($#attr_values > 0) && grep /$attr/i, @attr_keys);
@@ -227,7 +257,7 @@ sub insert_entries {
 
 
 sub print_usage {
-    print "usage: $0 [-n] -c config.cf\n\n";
+    print "usage: $0 [-n] [-d] -c config.cf\n\n";
     exit;
 }
 
