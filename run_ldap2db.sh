@@ -3,7 +3,7 @@
 # Morgan Jones (morgan@morganjones.org)
 # $Id$
 
-cmd_base=update_db_frm_ldap
+cmd_base=ldap2db
 
 base_path=`echo $0 | awk -F/ '{for (i=1;i<NF;i++){printf $i "/"}}' | sed 's/\/$//'`
 log_path=${base_path}/log
