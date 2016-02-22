@@ -3,15 +3,19 @@
 # Morgan Jones (morgan@morganjones.org)
 # $Id$
 
-cmd_base=ldap2db
-
 base_path=`echo $0 | awk -F/ '{for (i=1;i<NF;i++){printf $i "/"}}' | sed 's/\/$//'`
+cmd_base=ldap2db
 log_path=${base_path}/log
-log=${log_path}/${cmd_base}_`date +%y%m%d.%H:%M:%S`
+log=${log_path}/${cmd_base}_`date +%y%m%d%H%M%S`
 
-cmd="${base_path}/${cmd_base}.pl $*"
-echo "** output logged to ${log}"
-echo
+p=`cd $base_path && pwd`;
+
+cmd="${base_path}/${cmd_base}.pl -c ${base_path}/`basename ${p}`.cf -o $log $*"
+# echo "** output logged to ${log}"
+#echo
 echo $cmd
-$cmd 2>&1 | tee $log
+#$cmd 2>&1 | tee $log
+$cmd
+
+gzip ${log}
 

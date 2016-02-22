@@ -13,6 +13,8 @@ $|=1;
 
 sub insert_entries;
 sub truncate_table;
+sub my_print;
+sub my_printf;
 
 # suppress qw warnings (http://stackoverflow.com/questions/19573977/disable-warning-about-literal-commas-in-qw-list)
 $SIG{__WARN__} = sub {
@@ -21,25 +23,30 @@ $SIG{__WARN__} = sub {
     return CORE::warn @_;
 };
 
-# my %num2mon = qw( 1 JAN 2 FEB 3 MAR 4 APR 5 MAY 6 JUN 7 JUL 8 AUG 9 SEP 
-#                  10 OCT 11 NOV 12 DEC );
-
 my %opts;
-getopts('ndc:', \%opts);
+getopts('ndc:o:', \%opts);
 
 exists $opts{c} || print_usage();
+exists $opts{o} || print_usage();
 
-print "\nstarting at ", `date`;
+my $out;
+if (exists $opts{o}) {
+    open ($out, ">", $opts{o}) || die "unable to open $opts{o} for writing";
+} else {
+    print "you must specify an output file to print insert statements with -o\n";
+}
 
-print "-n used, ldap will not be modifed.\n"
+my_print $out, "\nstarting at ", `date`;
+
+my_print $out, "-n used, ldap will not be modifed.\n"
   if (exists $opts{n});
 
 require $opts{c};
 
-print "skip_if_attrs_empty set in config, entries with empty ldap values will be skipped\n"
+my_print $out, "skip_if_attrs_empty set in config, entries with empty ldap values will be skipped\n"
   if (exists $config{skip_if_attrs_empty} && $config{skip_if_attrs_empty} =~ /yes/i);
 
-print "\n";
+my_print $out, "\n";
 
 $ENV{ORACLE_BASE} = $config{oracle_base};
 $ENV{ORACLE_HOME} = $config{oracle_home};
@@ -60,9 +67,9 @@ if ($config{truncate_table} =~ /yes/i) {
 }
 
 for my $procedure (@{$config{pre_stored_procedures}}) {
-    print "calling pre stored procedure $procedure\n";
+    my_print $out, "calling pre stored procedure $procedure\n";
     if (!($dbh->do("call $procedure"))) {
-	printf("Error executing stored procedure: MySQL error %d (SQLSTATE %s)\n %s\n",
+	my_printf $out,("Error executing stored procedure: MySQL error %d (SQLSTATE %s)\n %s\n",
 	       $dbh->err,$dbh->state,$dbh->errstr); 
     }
 }
@@ -87,18 +94,18 @@ if (ref $config{insert_stmt} eq "ARRAY") {
     if (ref $config{insert_stmt} eq "ARRAY") {
 	my $i=0;
 	for my $insert_stmt (@{$config{insert_stmt}}) {
-	    insert_entries($config{insert_stmt}->[$i], $config{ldap_filter}->[$i], @{$config{ldap_attrs}->[$i]});
+	    insert_entries($config{insert_stmt}->[$i], $config{ldap_filter}->[$i], $out, @{$config{ldap_attrs}->[$i]});
 	    $i++;
 	}
     }
 } else {
-    insert_entries($config{insert_stmt}, @{$config{ldap_attrs}});
+    insert_entries($config{insert_stmt}, $out, @{$config{ldap_attrs}});
 }
 
 for my $procedure (@{$config{post_stored_procedures}}) {
-    print "calling post stored procedure $procedure\n";
+    my_print $out, "calling post stored procedure $procedure\n";
     if (!($dbh->do("call $procedure"))) {
-	printf("Error executing stored procedure: MySQL error %d (SQLSTATE %s)\n %s\n",
+	my_printf $out,("Error executing stored procedure: MySQL error %d (SQLSTATE %s)\n %s\n",
 	       $dbh->err,$dbh->state,$dbh->errstr); 
     }
 }
@@ -106,12 +113,15 @@ for my $procedure (@{$config{post_stored_procedures}}) {
 $dbh->commit;
 $dbh->disconnect;
 
-print "\nfinished at ", `date`;
+my_print $out, "\nfinished at ", `date`;
+
+close ($out);
+
 
 sub truncate_table {
     my $stmt = shift;
 
-    print "truncating table: $stmt\n";
+    my_print $out, "truncating table: $stmt\n";
     my $sth;
     $sth = $dbh->prepare($stmt)
       or die "problem preparing truncate: " . $sth->errstr;
@@ -121,7 +131,7 @@ sub truncate_table {
 
 
 sub insert_entries {
-    my ($insert_stmt, $ldap_filter, @in_ldap_attrs) = @_;
+    my ($insert_stmt, $ldap_filter, $out, @in_ldap_attrs) = @_;
 
     my @attr_keys;
     my %gen_keys;
@@ -151,7 +161,7 @@ sub insert_entries {
 	$count2++
     }
 
-    print "\nsearching ldap: $ldap_filter\n";
+    my_print $out, "\nsearching ldap: $ldap_filter\n";
     my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$ldap_filter, attrs => [@ldap_attrs]);
     $rslt->code && die "problem searching: ", $rslt->error;
 
@@ -174,7 +184,7 @@ sub insert_entries {
 				my $j = 0;
 				for (@attr_values) {
 				    if (exists $n->{sub}) {
-					$attr_values[$j] = $n->{sub}->($attr, $attr_values[$j]);
+					$attr_values[$j] = $n->{sub}->($attr, $attr_values[$j], $out);
 				    }
 				}
 			    }
@@ -214,27 +224,29 @@ sub insert_entries {
 	    my $j=0;
 	    for (@values) {
 		if (grep /$ldap_attrs[$j]/i, @attr_keys) {
-		    print $values[$j][0], " "
+		    my_print $out, $values[$j][0], " "
 		      if (exists $opts{d});
 		    push @insert_values, $values[$j][0]; 
 		} elsif (ref $values[$j] ne "ARRAY") {
-		    print "<empty> "
+		    my_print $out, "<empty> "
 		      if (exists $opts{d});
 		    push @insert_values, ""; 
 		} else {
-		    print $values[$j][$k], " "
+		    my_print $out, $values[$j][$k], " "
 		      if (exists $opts{d});
 		    push @insert_values, $values[$j][$k];
 		}
 		$j++
 	    }
-	    print "\n";
+	    print $out "\n";
 
-	    print "inserting into table: $insert_stmt\n";
+	    print $out "inserting into table: $insert_stmt\n";
 
 	    my $values_to_print = join ', ', @insert_values, "\n";
 	    $values_to_print =~ s/,\s*$//;
-	    print "values ", $values_to_print, "\n";
+	    #my_print $out, "values ", $values_to_print, "\n";
+	    print $out "values ", $values_to_print, "\n";
+
 
 	    my $insert_sth;
 	    $insert_sth = $dbh->prepare($insert_stmt)
@@ -248,16 +260,30 @@ sub insert_entries {
 
 	$count++;
 
-	print "\n*****\n"
+	my_print $out, "\n*****\n"
 	  if (exists $opts{d});
 
      }
-     print "$count entries inserted.\n";
+     my_print $out, "$count entries inserted.\n\n";
+}
+
+sub my_print {
+    my $out = shift;
+
+    print @_;
+    print $out @_;
+}
+
+sub my_printf {
+    my $out = shift;
+
+    printf @_;
+    printf $out @_;
 }
 
 
 sub print_usage {
-    print "usage: $0 [-n] [-d] -c config.cf\n\n";
+    print "usage: $0 [-n] [-d] -c config.cf -o output_file\n\n";
     exit;
 }
 
