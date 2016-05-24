@@ -38,7 +38,7 @@ if (exists $opts{o}) {
 
 my_print $out, "\nstarting at ", `date`;
 
-my_print $out, "-n used, ldap will not be modifed.\n"
+my_print $out, "-n used, no changes will be made.\n"
   if (exists $opts{n});
 
 require $opts{c};
@@ -108,6 +108,20 @@ for my $procedure (@{$config{post_stored_procedures}}) {
 	my_printf $out,("Error executing stored procedure: MySQL error %d (SQLSTATE %s)\n %s\n",
 	       $dbh->err,$dbh->state,$dbh->errstr); 
     }
+}
+if (exists $config{print_counts}) {
+    print "\n";
+    if (exists $config{print_counts}->{ldap_filter}) {
+	for my $f (@{$config{print_counts}->{ldap_filter}}) {
+	    print "$f: ";
+
+	    my $rslt2 = $ldap->search(base=>$config{ldap_base}, filter=>$f);
+	    $rslt2->code && die "problem searching: ", $rslt2->error;
+
+	    print $rslt2->entries . " entries\n";
+	}
+    }
+    
 }
 
 $dbh->commit;

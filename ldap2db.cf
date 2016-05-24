@@ -21,6 +21,11 @@
 	"ldap_attrs" => [[qw/attr1 attr2 gen:attr3/],
 		     	 [qw/singlekey:attr5 attr6 attr7/]],
 	"skip_if_attrs_empty" => "yes",
+
+	# optional
+	"print_counts" => {
+            "ldap_filter" => "(objectclass=orgemployee)", "(objectclass=orgassociate)"]
+        }	  
 );
 
 sub gen_VAL3 {
