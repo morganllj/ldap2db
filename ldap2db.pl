@@ -15,6 +15,9 @@ sub insert_entries;
 sub truncate_table;
 sub my_print;
 sub my_printf;
+sub get_unique_key;
+sub skip_value;
+sub skip_next_time;
 
 # suppress qw warnings (http://stackoverflow.com/questions/19573977/disable-warning-about-literal-commas-in-qw-list)
 $SIG{__WARN__} = sub {
@@ -145,6 +148,21 @@ sub truncate_table {
 
 
 sub insert_entries {
+    my $try_count=0;
+    while (1) {
+	if ($try_count>9) {
+	    print "\nexceeded 10 tries, exiting\n";
+	    exit;
+	}
+	last unless _insert_entries(@_);
+
+	$try_count++;
+    }
+}
+
+
+
+sub _insert_entries {
     my ($insert_stmt, $ldap_filter, $out, @in_ldap_attrs) = @_;
 
     my @attr_keys;
@@ -159,6 +177,8 @@ sub insert_entries {
 	s/\s*$//;
     }
 
+    # work through @in_ldap_attrs and break off config directives
+    # final attr names end up in @ldap_attrs
     my $count2 = 0;
     for (@in_ldap_attrs) {
 	if (/^singlekey:/i) {
@@ -179,6 +199,7 @@ sub insert_entries {
     my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$ldap_filter, attrs => [@ldap_attrs]);
     $rslt->code && die "problem searching: ", $rslt->error;
 
+    # put ldap values in @values
     my $count=0;
     for my $entry ($rslt->entries) {
 	my $next = 0;
@@ -207,7 +228,7 @@ sub insert_entries {
 		}
 	    }
 
-
+	    # TODO save value to skip next time and return here?
 	    die "multiple values for singlekey attr $attr in " . $entry->dn()
 	      if (($#attr_values > 0) && grep /$attr/i, @attr_keys);
 
@@ -261,25 +282,82 @@ sub insert_entries {
 	    #my_print $out, "values ", $values_to_print, "\n";
 	    print $out "values ", $values_to_print, "\n";
 
-
-	    my $insert_sth;
-	    $insert_sth = $dbh->prepare($insert_stmt)
-	      or die "problem preparing insert: " . $insert_sth->errstr;
-
-	    $insert_sth->execute(@insert_values) or die "problem executing statement: " . $insert_sth->errstr
-	      if (!exists $opts{n});
+	    if (skip_value(\@ldap_attrs, \@insert_values)) {
+		my_print $out, "skipping ",  $values_to_print, "\n\n";
+	    } else {
+		my $insert_sth;
+		unless ($insert_sth = $dbh->prepare($insert_stmt)) {
+		    my_print $out, "problem preparing insert: " . $insert_sth->errstr;
+		    die;
+		}
+		if (!exists $opts{n}) {
+		    my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
+		    
+		    unless ($insert_sth->execute(@insert_values)) {
+			my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
+			my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
+			skip_next_time($uk);
+			return 1;
+		    }
+		}
+		$count++;
+	    }
 
 	    $k++;
 	}
 
-	$count++;
-
 	my_print $out, "\n*****\n"
 	  if (exists $opts{d});
 
-     }
-     my_print $out, "$count entries inserted.\n\n";
+    }
+    my_print $out, "$count entries inserted.\n\n";
+    return 0;
 }
+
+
+sub get_unique_key {
+    my ($ldap_attrs, $insert_values) = @_;
+
+    if (exists $config{"unique_key"}) {
+	# get the number of the unique key and save the value for the next run
+	my $i=0;
+	for my $a (@$ldap_attrs) {
+	    if (lc $a eq lc $config{unique_key}) {
+		return @$insert_values[$i];
+	    }
+	    $i++;
+	}
+    }
+    
+    # concat the values in @$insert_values as a "unique" key
+    return join (' ', @$insert_values);
+}
+
+
+
+{
+    my @entries_to_skip;
+
+    sub skip_value {
+	my ($ldap_attrs, $insert_values) = @_;
+
+	my $uk = get_unique_key($ldap_attrs, $insert_values);
+
+	return 1
+	  if (grep /$uk/i, @entries_to_skip);
+
+	return 0;
+    }
+
+
+    sub skip_next_time {
+	my $uk = shift;
+
+	push @entries_to_skip, $uk;
+    }
+
+}
+
 
 sub my_print {
     my $out = shift;
