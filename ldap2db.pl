@@ -386,10 +386,10 @@ sub my_printf {
 
     sub alert_on_skipped_entries {
 	return unless (exists $config{"notify_if_failure"});
-
-	my_print $out, "notifying these addresses of skipped entries: ", $config{"notify_if_failure"}, "\n";
 	
 	if (@skipping) {
+	    my_print $out, "notifying these addresses of skipped entries: ", $config{"notify_if_failure"}, "\n";
+	    
 	    open (MAIL, "|mail -s \"ldap2db skipped entries\" $config{\"notify_if_failure\"}");
 	    for my $s (@skipping) {
 		print MAIL $s, "\n";
