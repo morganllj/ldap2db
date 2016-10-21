@@ -25,7 +25,9 @@
 	# optional
 	"print_counts" => {
             "ldap_filter" => "(objectclass=orgemployee)", "(objectclass=orgassociate)"]
-        }	  
+        }
+	"unique_key" => "orgAttrName",
+	"notify_if_failure" => "2155551212\@txt.att.net,morgan\@domain.org"
 );
 
 sub gen_VAL3 {
