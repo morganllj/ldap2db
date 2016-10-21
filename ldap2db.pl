@@ -18,6 +18,7 @@ sub my_printf;
 sub get_unique_key;
 sub skip_value;
 sub skip_next_time;
+sub add_to_skipping;
 
 # suppress qw warnings (http://stackoverflow.com/questions/19573977/disable-warning-about-literal-commas-in-qw-list)
 $SIG{__WARN__} = sub {
@@ -129,6 +130,8 @@ if (exists $config{print_counts}) {
 
 $dbh->commit;
 $dbh->disconnect;
+
+alert_on_skipped_entries();
 
 my_print $out, "\nfinished at ", `date`;
 
@@ -284,6 +287,7 @@ sub _insert_entries {
 
 	    if (skip_value(\@ldap_attrs, \@insert_values)) {
 		my_print $out, "skipping ",  $values_to_print, "\n\n";
+		add_to_skipping($values_to_print);
 	    } else {
 		my $insert_sth;
 		unless ($insert_sth = $dbh->prepare($insert_stmt)) {
@@ -371,6 +375,28 @@ sub my_printf {
 
     printf @_;
     printf $out @_;
+}
+
+{
+    my @skipping;
+    sub add_to_skipping {
+	my $skipping = shift;
+	push @skipping, $skipping;
+    }
+
+    sub alert_on_skipped_entries {
+	return unless (exists $config{"notify_if_failure"});
+
+	my_print $out, "notifying these addresses of skipped entries: ", $config{"notify_if_failure"}, "\n";
+	
+	if (@skipping) {
+	    open (MAIL, "|mail -s \"ldap2db skipped entries\" $config{\"notify_if_failure\"}");
+	    for my $s (@skipping) {
+		print MAIL $s, "\n";
+	    }
+	    close (MAIL);
+	}
+    }
 }
 
 
