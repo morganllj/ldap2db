@@ -11,10 +11,7 @@ log=${log_path}/${cmd_base}_`date +%y%m%d%H%M%S`
 p=`cd $base_path && pwd`;
 
 cmd="${base_path}/${cmd_base}.pl -c ${base_path}/`basename ${p}`.cf -o $log $*"
-# echo "** output logged to ${log}"
-#echo
 echo $cmd
-#$cmd 2>&1 | tee $log
 $cmd
 
 gzip ${log}
