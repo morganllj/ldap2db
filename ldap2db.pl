@@ -7,6 +7,11 @@ use Net::LDAP;
 use Getopt::Std;
 use Data::Dumper;
 
+use Email::Sender::Simple qw(sendmail);
+use Email::Simple;
+use Email::Simple::Creator;
+use Email::Sender::Transport::SMTP;
+
 our %config;
 
 $|=1;
@@ -32,6 +37,9 @@ getopts('ndc:o:', \%opts);
 
 exists $opts{c} || print_usage();
 exists $opts{o} || print_usage();
+
+die "email_from is required in config for notification\n"
+  if (exists $config{"notify_if_failure"} && !exists $config{"email_from"});
 
 my $out;
 if (exists $opts{o}) {
@@ -390,11 +398,27 @@ sub my_printf {
 	if (@skipping) {
 	    my_print $out, "notifying these addresses of skipped entries: ", $config{"notify_if_failure"}, "\n";
 	    
-	    open (MAIL, "|mail -s \"ldap2db skipped entries\" $config{\"notify_if_failure\"}");
-	    for my $s (@skipping) {
-		print MAIL $s, "\n";
+	    # open (MAIL, "|mail -s \"ldap2db skipped entries\" $config{\"notify_if_failure\"}");
+	    # for my $s (@skipping) {
+	    # 	print MAIL $s, "\n";
+	    # }
+	    # close (MAIL);
+
+	    my $message_body;
+
+    	    for my $s (@skipping) {
+	     	$message_body .= $s . "\n";
 	    }
-	    close (MAIL);
+
+	    my $email = Email::Simple->create (
+                header => [
+                    To      => $config{"notify_if_failure"},
+                    From    => $config{"email_from"},
+                    Subject => "ldap2db skipped entries",
+                ],
+                body => $message_body
+					     );
+	    sendmail($email);
 	}
     }
 }

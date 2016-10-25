@@ -9,8 +9,10 @@
 		           "INSERT INTO TABLE_NAME2 (VAL4, VAL5, VAL6) VALUES (?, ?, ?)" ],
 
 	"truncate_table" => "yes",
-	"truncate_stmt" => "TRUNCATE TABLE TABLE_NAME",
-
+	"truncate_stmt" => [ 
+	    "TRUNCATE TABLE GUARDIAN",
+            "TRUNCATE TABLE RELATIONSHIP" ],
+a
 	# ldap
 	"ldap_host" => "ldaps://sgldap.domain.net",
 	"ldap_binddn" => "binddn",
@@ -27,7 +29,8 @@
             "ldap_filter" => "(objectclass=orgemployee)", "(objectclass=orgassociate)"]
         }
 	"unique_key" => "orgAttrName",
-	"notify_if_failure" => "2155551212\@txt.att.net,morgan\@domain.org"
+	"notify_if_failure" => '2155551212@txt.att.net,morgan@domain.org',
+        "email_from" => 'ldap-admin@domain.org'
 );
 
 sub gen_VAL3 {
