@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/local/bin/perl -w
 #
 
 use strict;
@@ -92,7 +92,6 @@ $bind_rslt->code && die "unable to bind as $config{ldap_binddn}";
 
 
 # TODO: verify length of arrays match
-
 # TODO: if (ref $config{ldap_filter} eq "ARRAY") {
 if (ref $config{ldap_attrs} eq "ARRAY") {
     die "insert_stmt must be an array if ldap_attrs is an array"
@@ -177,7 +176,7 @@ sub _insert_entries {
     my ($insert_stmt, $ldap_filter, $out, @in_ldap_attrs) = @_;
 
     my @attr_keys;
-    my %gen_keys;
+    my %gen_attrs;
     my @ldap_attrs;
 
     $insert_stmt =~ /insert\s*into\s*[^\(]+\(([^\)]+)\)/i;
@@ -192,14 +191,21 @@ sub _insert_entries {
     # final attr names end up in @ldap_attrs
     my $count2 = 0;
     for (@in_ldap_attrs) {
+#	print "ldap_attr: ", $_, "\n";
 	if (/^singlekey:/i) {
 	    s/^singlekey://i;
 	    push @attr_keys, $_;
 	    push @ldap_attrs, $_;
 	} elsif (/^gen:/i) {
 	    s/^gen://i;
-	    @{$gen_keys{$db_cols[$count2]}} = split /\s*,\s*/;
-	    push @ldap_attrs, split /\s*,\s*/;
+	    # @{$gen_keys{$db_cols[$count2]}} = split /\s*,\s*/;	   
+	    # push @ldap_attrs, split /\s*,\s*/;
+#	    print "db_cols count2: ", $db_cols[$count2], "\n";
+	    # @{$gen_attrs{$db_cols[$count2]}} = $_;
+	    $gen_attrs{$db_cols[$count2]} = $_;
+#	    print "pushing onto attrs: ", $_, "\n";
+#	    print "gen_attrs: ", Dumper %gen_attrs, "\n";
+	    push @ldap_attrs, $_;
 	} else {
 	    push @ldap_attrs, $_;
 	}
@@ -215,13 +221,24 @@ sub _insert_entries {
     for my $entry ($rslt->entries) {
 	my $next = 0;
 	my @values;
-
 	my $longest_attr_list=0;
-
 	my $i=0;
+	
 	for my $attr (@ldap_attrs) {
 	    my @attr_values = $entry->get_value($attr);
 
+	    if (exists($gen_attrs{$db_cols[$i]})) {
+		my $sub_name = "gen_".$db_cols[$i];
+		my $subref = \&$sub_name;
+		#		@attr_values = {"gen_".$db_cols[$i]}->($gen_attrs{$db_cols[$i]}, $out, @attr_values);
+		@attr_values = $subref->($gen_attrs{$db_cols[$i]}, $out, @attr_values);
+
+		print "values returned from gen: ", join ' ', @attr_values, "\n";
+	    }
+
+	    # check for a normalize section in the config.
+	    # identify the attr with one or more regexes and run a
+	    # user-defined sub on it
 	    if (exists $config{normalize}) {
 		for my $n (@{$config{normalize}}) {
 		    if (exists $n->{regex}) {
@@ -243,7 +260,7 @@ sub _insert_entries {
 	    die "multiple values for singlekey attr $attr in " . $entry->dn()
 	      if (($#attr_values > 0) && grep /$attr/i, @attr_keys);
 
-	    if ( ($#attr_values < 0 )&&
+	    if ( ($#attr_values < 0) &&
 		 exists $config{skip_if_attrs_empty} && $config{skip_if_attrs_empty} =~ /yes/i) {
 		$next = 1;
 	    } else {
@@ -260,6 +277,8 @@ sub _insert_entries {
 
 	next
 	  if ($next);
+
+	next;
 
 	my $j=0;
 	my $k=0;
@@ -387,6 +406,7 @@ sub my_printf {
 
 {
     my @skipping;
+    
     sub add_to_skipping {
 	my $skipping = shift;
 	push @skipping, $skipping;
@@ -398,12 +418,6 @@ sub my_printf {
 	if (@skipping) {
 	    my_print $out, "notifying these addresses of skipped entries: ", $config{"notify_if_failure"}, "\n";
 	    
-	    # open (MAIL, "|mail -s \"ldap2db skipped entries\" $config{\"notify_if_failure\"}");
-	    # for my $s (@skipping) {
-	    # 	print MAIL $s, "\n";
-	    # }
-	    # close (MAIL);
-
 	    my $message_body;
 
     	    for my $s (@skipping) {
