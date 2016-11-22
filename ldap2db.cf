@@ -12,26 +12,41 @@
 	"truncate_stmt" => [ 
 	    "TRUNCATE TABLE GUARDIAN",
             "TRUNCATE TABLE RELATIONSHIP" ],
-a
+
 	# ldap
 	"ldap_host" => "ldaps://sgldap.domain.net",
 	"ldap_binddn" => "binddn",
 	"ldap_pass" => "bindpass",
 	"ldap_base" => "dc=domain,dc=org",
 	"ldap_filter" => ["filter1",
-			  "filter2],
+			  "filter2"],
 	"ldap_attrs" => [[qw/attr1 attr2 gen:attr3/],
 		     	 [qw/singlekey:attr5 attr6 attr7/]],
 	"skip_if_attrs_empty" => "yes",
 
 	# optional
+        "normalize" => [
+	    { "regex" => ["attr1", "attr2"],
+	      "sub" => \&mod_attrs1and2 },
+            { "regex" => ["date"],
+	      "sub" => \&fix_date }
+        ],
+
 	"print_counts" => {
             "ldap_filter" => "(objectclass=orgemployee)", "(objectclass=orgassociate)"]
-        }
+        },
 	"unique_key" => "orgAttrName",
 	"notify_if_failure" => '2155551212@txt.att.net,morgan@domain.org',
         "email_from" => 'ldap-admin@domain.org'
 );
+
+sub mod_attrs1and2 {
+ my ($attr, $value, $out) = @_;
+
+ # modify $value
+
+ return $value
+}
 
 sub gen_VAL3 {
 
