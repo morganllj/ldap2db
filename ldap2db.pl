@@ -191,20 +191,13 @@ sub _insert_entries {
     # final attr names end up in @ldap_attrs
     my $count2 = 0;
     for (@in_ldap_attrs) {
-#	print "ldap_attr: ", $_, "\n";
 	if (/^singlekey:/i) {
 	    s/^singlekey://i;
 	    push @attr_keys, $_;
 	    push @ldap_attrs, $_;
 	} elsif (/^gen:/i) {
 	    s/^gen://i;
-	    # @{$gen_keys{$db_cols[$count2]}} = split /\s*,\s*/;	   
-	    # push @ldap_attrs, split /\s*,\s*/;
-#	    print "db_cols count2: ", $db_cols[$count2], "\n";
-	    # @{$gen_attrs{$db_cols[$count2]}} = $_;
 	    $gen_attrs{$db_cols[$count2]} = $_;
-#	    print "pushing onto attrs: ", $_, "\n";
-#	    print "gen_attrs: ", Dumper %gen_attrs, "\n";
 	    push @ldap_attrs, $_;
 	} else {
 	    push @ldap_attrs, $_;
@@ -225,15 +218,15 @@ sub _insert_entries {
 	my $i=0;
 	
 	for my $attr (@ldap_attrs) {
+	    print "\nattr: $attr\n";
 	    my @attr_values = $entry->get_value($attr);
 
 	    if (exists($gen_attrs{$db_cols[$i]})) {
 		my $sub_name = "gen_".$db_cols[$i];
 		my $subref = \&$sub_name;
-		#		@attr_values = {"gen_".$db_cols[$i]}->($gen_attrs{$db_cols[$i]}, $out, @attr_values);
 		@attr_values = $subref->($gen_attrs{$db_cols[$i]}, $out, @attr_values);
 
-		print "values returned from gen: ", join ' ', @attr_values, "\n";
+		print "values returned from gen_", $sub_name, ": ", join ' ', @attr_values, "\n";
 	    }
 
 	    # check for a normalize section in the config.
@@ -309,7 +302,6 @@ sub _insert_entries {
 
 	    my $values_to_print = join ', ', @insert_values, "\n";
 	    $values_to_print =~ s/,\s*$//;
-	    #my_print $out, "values ", $values_to_print, "\n";
 	    print $out "values ", $values_to_print, "\n";
 
 	    if (skip_value(\@ldap_attrs, \@insert_values)) {
