@@ -36,15 +36,14 @@
         ],
 
 	"print_counts" => {
-            "ldap_filter" => "(objectclass=orgemployee)", "(objectclass=orgassociate)"]
+            "ldap_filter" => ["(objectclass=orgemployee)", "(objectclass=orgassociate)"]
         },
-	"unique_key" => "orgAttrName",
-	"notify_if_failure" => '2155551212@txt.att.net,morgan@domain.org',
+        "unique_key" => "orgAttrName",
+        "notify_if_failure" => '2155551212@txt.att.net,morgan@domain.org',
         "email_from" => 'ldap-admin@domain.org',
 
-    # compare data with what's already in the db and only insert differences
-    "only_insert_diffs" => "yes"
-	
+        # compare data with what's already in the db and only insert differences
+        "only_insert_diffs" => "yes"
 );
 
 sub mod_attrs1and2 {
