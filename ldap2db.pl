@@ -90,7 +90,6 @@ my $ldap=Net::LDAP->new($config{ldap_host});
 my $bind_rslt = $ldap->bind($config{ldap_binddn}, password => $config{ldap_pass});
 $bind_rslt->code && die "unable to bind as $config{ldap_binddn}";
 
-
 # TODO: verify length of arrays match
 # TODO: if (ref $config{ldap_filter} eq "ARRAY") {
 if (ref $config{ldap_attrs} eq "ARRAY") {
@@ -104,7 +103,8 @@ if (ref $config{insert_stmt} eq "ARRAY") {
 
     if (ref $config{insert_stmt} eq "ARRAY") {
 	my $i=0;
-	for my $insert_stmt (@{$config{insert_stmt}}) {
+	#	for my $insert_stmt (@{$config{insert_stmt}}) {
+	for (@{$config{insert_stmt}}) {
 	    insert_entries($config{insert_stmt}->[$i], $config{ldap_filter}->[$i], $out, @{$config{ldap_attrs}->[$i]});
 	    $i++;
 	}
@@ -179,12 +179,13 @@ sub _insert_entries {
     my %gen_attrs;
     my @ldap_attrs;
 
-    $insert_stmt =~ /insert\s*into\s*[^\(]+\(([^\)]+)\)/i;
-
-    my @db_cols = split /\s*,\s*/, $1;
+#    $insert_stmt =~ /insert\s*into\s*[^\(]+\(([^\)]+)\)/i;
+    $insert_stmt =~ /insert\s+into\s+([^\(]+)\(([^\)]+)\)/i;
+    my $insert_into = $1;
+    my @db_cols = split /\s*,\s*/, $2;
     for (@db_cols) {
-	s/^\s*//;
-	s/\s*$//;
+    	s/^\s*//;
+    	s/\s*$//;
     }
 
     # work through @in_ldap_attrs and break off config directives
@@ -218,15 +219,12 @@ sub _insert_entries {
 	my $i=0;
 	
 	for my $attr (@ldap_attrs) {
-	    print "\nattr: $attr\n";
 	    my @attr_values = $entry->get_value($attr);
 
 	    if (exists($gen_attrs{$db_cols[$i]})) {
 		my $sub_name = "gen_".$db_cols[$i];
 		my $subref = \&$sub_name;
 		@attr_values = $subref->($gen_attrs{$db_cols[$i]}, $out, @attr_values);
-
-		print "values returned from gen_", $sub_name, ": ", join ' ', @attr_values, "\n";
 	    }
 
 	    # check for a normalize section in the config.
@@ -271,8 +269,19 @@ sub _insert_entries {
 	next
 	  if ($next);
 
-	next;
+	my @values_already_in_db;
+	if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
+	    my $sql = "SELECT " . join (', ', @db_cols) . " FROM " . $insert_into;
+	    print "sql: ", $sql, "\n";
 
+	    my $sth = $dbh->prepare($sql);
+	    $sth->execute();
+	    my $i=0;
+	    while (my @row = $sth->fetchrow_array) {
+		$values_already_in_db[$i++] = \@row;
+	    }
+	}
+	
 	my $j=0;
 	my $k=0;
 
@@ -298,6 +307,17 @@ sub _insert_entries {
 	    }
 	    print $out "\n";
 
+
+	    if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
+		for my $vals (@values_already_in_db) {
+		    print join ', ', @$vals, "\n";
+		    print join ', ', @insert_values, "\n";
+		    print "\n";
+		}
+	    }
+	    
+	    exit;
+	    
 	    print $out "inserting into table: $insert_stmt\n";
 
 	    my $values_to_print = join ', ', @insert_values, "\n";
@@ -325,6 +345,11 @@ sub _insert_entries {
 		}
 		$count++;
 	    }
+
+
+
+
+	    
 
 	    $k++;
 	}
