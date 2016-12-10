@@ -26,7 +26,8 @@ sub get_unique_key;
 sub skip_value;
 sub skip_next_time;
 sub add_to_skipping;
-sub individual_db_insert;
+sub individual_db_stmt;
+sub increment_entry_count;
 
 # suppress qw warnings (http://stackoverflow.com/questions/19573977/disable-warning-about-literal-commas-in-qw-list)
 $SIG{__WARN__} = sub {
@@ -213,9 +214,6 @@ sub _insert_entries {
 
     my @sql_types;
     if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
-
-
-	
 	my $sql = "SELECT " . join (', ', @db_cols) . " FROM " . $insert_into;
 
 	print "searching db $sql\n";
@@ -247,7 +245,6 @@ sub _insert_entries {
 	#	    $sql = "SELECT NLS_DATE_FORMAT FROM NLS_SESSION_PARAMETERS";
 	#	    $sth = $dbh->prepare($sql);
 	#	    $sth-> execute();
-
 	# while (my @row = $sth->fetchrow_array) {
 	# 	print join (' ', @row);
 	# }
@@ -260,7 +257,7 @@ sub _insert_entries {
     $rslt->code && die "problem searching: ", $rslt->error;
 
     # put ldap values in @values
-    my $count=0;
+#    my $count=0;
     for my $entry ($rslt->entries) {
 	my $next = 0;
 	my @values;
@@ -328,16 +325,16 @@ sub _insert_entries {
 	    my $j=0;
 	    for (@values) {
 		if (grep /$ldap_attrs[$j]/i, @attr_keys) {
-		    my_print $out, $values[$j][0], " "
-		      if (exists $opts{d});
+		    # my_print $out, $values[$j][0], " "
+		    #   if (exists $opts{d});
 		    push @insert_values, $values[$j][0]; 
 		} elsif (ref $values[$j] ne "ARRAY") {
-		    my_print $out, "<empty> "
-		      if (exists $opts{d});
+ 		    # my_print $out, "<empty> "
+		    #   if (exists $opts{d});
 		    push @insert_values, ""; 
 		} else {
-		    my_print $out, $values[$j][$k], " "
-		      if (exists $opts{d});
+		    # my_print $out, $values[$j][$k], " "
+		    #   if (exists $opts{d});
 		    push @insert_values, $values[$j][$k];
 		}
 		$j++
@@ -351,7 +348,7 @@ sub _insert_entries {
 
 		# http://alvinalexander.com/java/edu/pj/jdbc/recipes/ResultSet-ColumnType.shtml
 		#		$ENV{'NLS_DATE_FORMAT'} = 'YYYY-MM-DD HH24:MI:SS';
-		$ENV{'NLS_DATE_FORMAT'} = 'YYYY-MM-DD';
+		$ENV{'NLS_DATE_FORMAT'} = 'YY-MON-DD';
 
 		if ($#insert_values != $#sql_types) {
 		    print "count of types does not match the count of values:\n";
@@ -376,6 +373,7 @@ sub _insert_entries {
 			    $insert_values[$i] = "";
 			} else {
 			    $insert_values[$i] = DateTime::Format::Oracle->format_datetime($dt);
+			    $insert_values[$i] = uc  $insert_values[$i];
 			}
 		    } else {
 			die "unknown sql type $sql_types[$i].  This is because it needs to be added here.";
@@ -391,49 +389,20 @@ sub _insert_entries {
 		$in_ldap{$index} = \@insert_values;
 	    } else {
 		# We weren't asked to diff so just do a straight insert of the data
-		individual_db_insert($insert_stmt, $out, @insert_values);
-
-		# # We weren't asked to diff so just do a straight insert of the data
-		# print $out "inserting into table: $insert_stmt\n";
-
-		# my $values_to_print = join ', ', @insert_values, "\n";
-		# $values_to_print =~ s/,\s*$//;
-		# print $out "values ", $values_to_print, "\n";
-
-		# if (skip_value(\@ldap_attrs, \@insert_values)) {
-		#     my_print $out, "skipping ",  $values_to_print, "\n\n";
-		#     add_to_skipping($values_to_print);
-		# } else {
-		#     my $insert_sth;
-		#     unless ($insert_sth = $dbh->prepare($insert_stmt)) {
-		# 	my_print $out, "problem preparing insert: " . $insert_sth->errstr;
-		# 	die;
-		#     }
-		#     if (!exists $opts{n}) {
-		# 	my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
-		    
-		# 	unless ($insert_sth->execute(@insert_values)) {
-		# 	    my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
-		# 	    my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
-		# 	    skip_next_time($uk);
-		# 	    return 1;
-		# 	}
-		#     }
-		#     $count++;
-		# }
+		individual_db_stmt($insert_stmt, \@ldap_attrs, $out, @insert_values);
 	    }
 
 	    $k++;
 	}
 
-	my_print $out, "\n*****\n"
-	  if (exists $opts{d});
+	# my_print $out, "\n*****\n"
+	#   if (exists $opts{d});
     }
 
 
 
     if (!exists $config{only_insert_diffs} && $config{only_insert_diffs} !~ /yes/i) {
-	my_print $out, "$count entries inserted.\n\n";
+	my_print $out, entry_count(), " entries inserted.\n\n";
     }
 
 
@@ -443,13 +412,13 @@ sub _insert_entries {
 	if (!exists ($in_db{$k})) {
 	    print "inserting into db: ", $k, "\n";
 
-	    individual_db_insert($insert_stmt, $out, @{$in_db{$k}})
+	    individual_db_stmt($insert_stmt, \@ldap_attrs, $out, @{$in_ldap{$k}})
 	}
     }
 
     for my $k (sort keys %in_db) {
 	if (!exists ($in_ldap{$k})) {
-	    print "removing from db: ", $k, "\n";
+#	    print "removing from db: ", $k, "\n";
 	}
     }
 
@@ -459,37 +428,45 @@ sub _insert_entries {
 }
 
 sub individual_db_stmt {
-    my ($insert_stmt, $out, @insert_values) = @_;
-    
-    print $out "inserting into table: $insert_stmt\n";
+    my ($stmt, $ldap_attrs, $out, @values) = @_;
 
-    my $values_to_print = join ', ', @insert_values, "\n";
+    print "values size: $#values\n";
+
+    print "running statment: $stmt\n"
+      if (exists $opts{d});
+    print $out "running statment: $stmt\n";
+
+    my $values_to_print = join ', ', @values, "\n";
     $values_to_print =~ s/,\s*$//;
+
+    print "values ", $values_to_print, "\n"
+      if (exists $opts{d});
     print $out "values ", $values_to_print, "\n";
 
-    if (skip_value(\@ldap_attrs, \@insert_values)) {
+    #    if (skip_value(\@ldap_attrs, \@insert_values)) {
+        if (skip_value($ldap_attrs, \@values)) {
 	my_print $out, "skipping ",  $values_to_print, "\n\n";
 	add_to_skipping($values_to_print);
     } else {
-	my $insert_sth;
-	unless ($insert_sth = $dbh->prepare($insert_stmt)) {
-	    my_print $out, "problem preparing insert: " . $insert_sth->errstr;
+	my $sth;
+	unless ($sth = $dbh->prepare($stmt)) {
+	    my_print $out, "problem preparing insert: " . $sth->errstr;
 	    die;
 	}
 	if (!exists $opts{n}) {
-	    my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
+	    #	    my $uk = get_unique_key(\@ldap_attrs, \@values);
+	    my $uk = get_unique_key($ldap_attrs, \@values);	    
 		    
-	    unless ($insert_sth->execute(@insert_values)) {
-		my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
+	    unless ($sth->execute(@values)) {
+		my_print $out, "problem executing statement: ", $sth->errstr, "\n";
 		my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
 		skip_next_time($uk);
 		return 1;
 	    }
 	}
-	$count++;
+#	$count++;
+	increment_entry_count();
     }
-
-    
 }
     
 
@@ -584,6 +561,20 @@ sub my_printf {
 	    sendmail($email);
 	}
     }
+}
+
+
+{
+    my $c=0;
+
+    sub increment_entry_count {
+	$c++;
+    }
+
+    sub entry_count {
+	return $c;
+    }
+    
 }
 
 
