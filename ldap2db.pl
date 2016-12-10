@@ -6,6 +6,8 @@ use DBI;
 use Net::LDAP;
 use Getopt::Std;
 use Data::Dumper;
+use DateTime;
+use DateTime::Format::Oracle;
 
 use Email::Sender::Simple qw(sendmail);
 use Email::Simple;
@@ -179,7 +181,6 @@ sub _insert_entries {
     my %gen_attrs;
     my @ldap_attrs;
 
-#    $insert_stmt =~ /insert\s*into\s*[^\(]+\(([^\)]+)\)/i;
     $insert_stmt =~ /insert\s+into\s+([^\(]+)\(([^\)]+)\)/i;
     my $insert_into = $1;
     my @db_cols = split /\s*,\s*/, $2;
@@ -269,19 +270,10 @@ sub _insert_entries {
 	next
 	  if ($next);
 
-	my @values_already_in_db;
-	if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
-	    my $sql = "SELECT " . join (', ', @db_cols) . " FROM " . $insert_into;
-	    print "sql: ", $sql, "\n";
 
-	    my $sth = $dbh->prepare($sql);
-	    $sth->execute();
-	    my $i=0;
-	    while (my @row = $sth->fetchrow_array) {
-		$values_already_in_db[$i++] = \@row;
-	    }
-	}
-	
+
+
+
 	my $j=0;
 	my $k=0;
 
@@ -308,43 +300,34 @@ sub _insert_entries {
 	    print $out "\n";
 
 
-	    if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
-		for my $vals (@values_already_in_db) {
-		    print join ', ', @$vals, "\n";
-		    print join ', ', @insert_values, "\n";
-		    print "\n";
-		}
-	    }
 	    
-	    exit;
-	    
-	    print $out "inserting into table: $insert_stmt\n";
+	    # print $out "inserting into table: $insert_stmt\n";
 
-	    my $values_to_print = join ', ', @insert_values, "\n";
-	    $values_to_print =~ s/,\s*$//;
-	    print $out "values ", $values_to_print, "\n";
+	    # my $values_to_print = join ', ', @insert_values, "\n";
+	    # $values_to_print =~ s/,\s*$//;
+	    # print $out "values ", $values_to_print, "\n";
 
-	    if (skip_value(\@ldap_attrs, \@insert_values)) {
-		my_print $out, "skipping ",  $values_to_print, "\n\n";
-		add_to_skipping($values_to_print);
-	    } else {
-		my $insert_sth;
-		unless ($insert_sth = $dbh->prepare($insert_stmt)) {
-		    my_print $out, "problem preparing insert: " . $insert_sth->errstr;
-		    die;
-		}
-		if (!exists $opts{n}) {
-		    my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
+	    # if (skip_value(\@ldap_attrs, \@insert_values)) {
+	    # 	my_print $out, "skipping ",  $values_to_print, "\n\n";
+	    # 	add_to_skipping($values_to_print);
+	    # } else {
+	    # 	my $insert_sth;
+	    # 	unless ($insert_sth = $dbh->prepare($insert_stmt)) {
+	    # 	    my_print $out, "problem preparing insert: " . $insert_sth->errstr;
+	    # 	    die;
+	    # 	}
+	    # 	if (!exists $opts{n}) {
+	    # 	    my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
 		    
-		    unless ($insert_sth->execute(@insert_values)) {
-			my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
-			my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
-			skip_next_time($uk);
-			return 1;
-		    }
-		}
-		$count++;
-	    }
+	    # 	    unless ($insert_sth->execute(@insert_values)) {
+	    # 		my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
+	    # 		my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
+	    # 		skip_next_time($uk);
+	    # 		return 1;
+	    # 	    }
+	    # 	}
+	    # 	$count++;
+	    # }
 
 
 
@@ -358,6 +341,93 @@ sub _insert_entries {
 	  if (exists $opts{d});
 
     }
+
+
+
+
+
+
+
+
+    
+	my @values_already_in_db;
+	my @sql_types;
+	if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
+	    my $sql = "SELECT " . join (', ', @db_cols) . " FROM " . $insert_into;
+
+	    my $sth = $dbh->prepare($sql);
+	    $sth->execute();
+
+	    # http://docstore.mik.ua/orelly/linux/dbi/ch06_01.htm#FOOTNOTE-61
+	    # see 'TYPE' in comments at bottom of this script.
+
+	    @sql_types = @{$sth->{TYPE}};
+	    
+	    my $i=0;
+	    while (my @row = $sth->fetchrow_array) {
+		$values_already_in_db[$i++] = \@row;
+	    }
+
+	    # doesn't work, not sure why
+#	    $sql = "SELECT NLS_DATE_FORMAT FROM NLS_SESSION_PARAMETERS";
+#	    $sth = $dbh->prepare($sql);
+#	    $sth-> execute();
+
+	    # while (my @row = $sth->fetchrow_array) {
+	    # 	print join (' ', @row);
+	    # }
+	    # exit;
+	}
+
+
+
+
+
+
+    	    
+	    if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
+		# http://alvinalexander.com/java/edu/pj/jdbc/recipes/ResultSet-ColumnType.shtml
+		#		$ENV{'NLS_DATE_FORMAT'} = 'YYYY-MM-DD HH24:MI:SS';
+		$ENV{'NLS_DATE_FORMAT'} = 'YYYY-MM-DD';
+
+		for my $vals (@values_already_in_db) {
+		    if ($#$vals != $#sql_types) {
+			print "count of types does not match the count of values:\n";
+			print Dumper @$vals, "\n", Dumper @sql_types, "\n";
+			die;
+		    }
+
+		    for my $iv (@insert_values) {
+			$values_already_in_db[$i] = ""
+			  if (!defined($values_already_in_db[$i]));
+			
+			if ($sql_types[$i] == 8) {
+			    # sql double, convert to a number
+			    $$vals[$i] += 0;
+			} elsif ($sql_types[$i] == 12) {
+			    # varchar, do nothing
+			} elsif ($sql_types[$i] == 93) {
+			    # timestamp
+			    my $dt = DateTime::Format::LDAP->parse_datetime($insert_values[$i]);
+			    my $$vals[$i] = DateTime::Format::Oracle->format_datetime($dt);
+			}
+			$i++;
+		    
+		    }
+
+		}
+
+	    }
+
+
+
+
+
+
+
+
+
+    
     my_print $out, "$count entries inserted.\n\n";
     return 0;
 }
@@ -461,3 +531,37 @@ sub print_usage {
 }
 
 
+
+  # TYPE
+  #     The TYPE attribute contains a reference to an array
+  #     of integer values representing the international
+  #     standard values for the respective datatypes. The
+  #     array of integers has a length equal to the number
+  #     of columns selected within the original statement,
+  #     and can be referenced in a similar way to the NAME
+  #     attribute example shown earlier.
+  #
+  #     The standard values for common types are:
+  #
+  #         SQL_CHAR             1
+  #         SQL_NUMERIC          2
+  #         SQL_DECIMAL          3
+  #         SQL_INTEGER          4
+  #         SQL_SMALLINT         5
+  #         SQL_FLOAT            6
+  #         SQL_REAL             7
+  #         SQL_DOUBLE           8
+  #         SQL_DATE             9
+  #         SQL_TIME            10
+  #         SQL_TIMESTAMP       11
+  #         SQL_VARCHAR         12
+  #         SQL_LONGVARCHAR     -1
+  #         SQL_BINARY          -2
+  #         SQL_VARBINARY       -3
+  #         SQL_LONGVARBINARY   -4
+  #         SQL_BIGINT          -5
+  #         SQL_TINYINT         -6
+  #         SQL_BIT             -7
+  #         SQL_WCHAR           -8
+  #         SQL_WVARCHAR        -9
+  #         SQL_WLONGVARCHAR   -10
