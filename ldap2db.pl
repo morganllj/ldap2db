@@ -26,6 +26,7 @@ sub get_unique_key;
 sub skip_value;
 sub skip_next_time;
 sub add_to_skipping;
+sub individual_db_insert;
 
 # suppress qw warnings (http://stackoverflow.com/questions/19573977/disable-warning-about-literal-commas-in-qw-list)
 $SIG{__WARN__} = sub {
@@ -212,7 +213,12 @@ sub _insert_entries {
 
     my @sql_types;
     if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
+
+
+	
 	my $sql = "SELECT " . join (', ', @db_cols) . " FROM " . $insert_into;
+
+	print "searching db $sql\n";
 
 	my $sth = $dbh->prepare($sql);
 	$sth->execute();
@@ -381,37 +387,40 @@ sub _insert_entries {
 		die "/$index/ already exists in \%in_ldap, this shouldn't happen"
 		  if (exists $in_ldap{$index});
 
-		print "inserting into in_ldap /$index/\n";
+#		print "inserting into in_ldap /$index/\n";
 		$in_ldap{$index} = \@insert_values;
 	    } else {
 		# We weren't asked to diff so just do a straight insert of the data
-		print $out "inserting into table: $insert_stmt\n";
+		individual_db_insert($insert_stmt, $out, @insert_values);
 
-		my $values_to_print = join ', ', @insert_values, "\n";
-		$values_to_print =~ s/,\s*$//;
-		print $out "values ", $values_to_print, "\n";
+		# # We weren't asked to diff so just do a straight insert of the data
+		# print $out "inserting into table: $insert_stmt\n";
 
-		if (skip_value(\@ldap_attrs, \@insert_values)) {
-		    my_print $out, "skipping ",  $values_to_print, "\n\n";
-		    add_to_skipping($values_to_print);
-		} else {
-		    my $insert_sth;
-		    unless ($insert_sth = $dbh->prepare($insert_stmt)) {
-			my_print $out, "problem preparing insert: " . $insert_sth->errstr;
-			die;
-		    }
-		    if (!exists $opts{n}) {
-			my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
+		# my $values_to_print = join ', ', @insert_values, "\n";
+		# $values_to_print =~ s/,\s*$//;
+		# print $out "values ", $values_to_print, "\n";
+
+		# if (skip_value(\@ldap_attrs, \@insert_values)) {
+		#     my_print $out, "skipping ",  $values_to_print, "\n\n";
+		#     add_to_skipping($values_to_print);
+		# } else {
+		#     my $insert_sth;
+		#     unless ($insert_sth = $dbh->prepare($insert_stmt)) {
+		# 	my_print $out, "problem preparing insert: " . $insert_sth->errstr;
+		# 	die;
+		#     }
+		#     if (!exists $opts{n}) {
+		# 	my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
 		    
-			unless ($insert_sth->execute(@insert_values)) {
-			    my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
-			    my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
-			    skip_next_time($uk);
-			    return 1;
-			}
-		    }
-		    $count++;
-		}
+		# 	unless ($insert_sth->execute(@insert_values)) {
+		# 	    my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
+		# 	    my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
+		# 	    skip_next_time($uk);
+		# 	    return 1;
+		# 	}
+		#     }
+		#     $count++;
+		# }
 	    }
 
 	    $k++;
@@ -428,16 +437,63 @@ sub _insert_entries {
     }
 
 
-    print "compare hashes now...\n";
+    print "comparing...\n";
 
+    for my $k (sort keys %in_ldap) {
+	if (!exists ($in_db{$k})) {
+	    print "inserting into db: ", $k, "\n";
 
+	    individual_db_insert($insert_stmt, $out, @{$in_db{$k}})
+	}
+    }
 
+    for my $k (sort keys %in_db) {
+	if (!exists ($in_ldap{$k})) {
+	    print "removing from db: ", $k, "\n";
+	}
+    }
 
 
     
     return 0;
 }
 
+sub individual_db_stmt {
+    my ($insert_stmt, $out, @insert_values) = @_;
+    
+    print $out "inserting into table: $insert_stmt\n";
+
+    my $values_to_print = join ', ', @insert_values, "\n";
+    $values_to_print =~ s/,\s*$//;
+    print $out "values ", $values_to_print, "\n";
+
+    if (skip_value(\@ldap_attrs, \@insert_values)) {
+	my_print $out, "skipping ",  $values_to_print, "\n\n";
+	add_to_skipping($values_to_print);
+    } else {
+	my $insert_sth;
+	unless ($insert_sth = $dbh->prepare($insert_stmt)) {
+	    my_print $out, "problem preparing insert: " . $insert_sth->errstr;
+	    die;
+	}
+	if (!exists $opts{n}) {
+	    my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
+		    
+	    unless ($insert_sth->execute(@insert_values)) {
+		my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
+		my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
+		skip_next_time($uk);
+		return 1;
+	    }
+	}
+	$count++;
+    }
+
+    
+}
+    
+
+    
 
 sub get_unique_key {
     my ($ldap_attrs, $insert_values) = @_;
