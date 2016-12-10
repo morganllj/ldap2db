@@ -252,7 +252,7 @@ sub _insert_entries {
     }
     
 
-    my_print $out, "searching ldap: $ldap_filter\n";
+    my_print $out, "\nsearching ldap: $ldap_filter\n";
     my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$ldap_filter, attrs => [@ldap_attrs]);
     $rslt->code && die "problem searching: ", $rslt->error;
 
@@ -399,12 +399,9 @@ sub _insert_entries {
 	#   if (exists $opts{d});
     }
 
-
-
     if (!exists $config{only_insert_diffs} && $config{only_insert_diffs} !~ /yes/i) {
 	my_print $out, entry_count(), " entries inserted.\n\n";
     }
-
 
     print "comparing...\n";
 
@@ -418,7 +415,20 @@ sub _insert_entries {
 
     for my $k (sort keys %in_db) {
 	if (!exists ($in_ldap{$k})) {
-#	    print "removing from db: ", $k, "\n";
+	    print "removing from db: ", $k, "\n"
+	      if (exists $opts{d});
+	    print $out "removing from db: ", $k, "\n";
+
+	    my $delete_stmt = "DELETE FROM " . $insert_into . " WHERE ";
+
+	    my $i = 0;
+	    for (@db_cols) {
+		$delete_stmt .= $db_cols[$i] . "='" . $in_db{$k}[$i] . "'";
+		$delete_stmt .= " AND "
+		  if ($i < $#db_cols);
+		$i++;
+	    }
+	    individual_db_stmt($delete_stmt, \@ldap_attrs, $out, @{$in_ldap{$k}});
 	}
     }
 
@@ -427,24 +437,28 @@ sub _insert_entries {
     return 0;
 }
 
+
+sub delete_stmt {
+    
+}
+
+
 sub individual_db_stmt {
     my ($stmt, $ldap_attrs, $out, @values) = @_;
 
-    print "values size: $#values\n";
-
-    print "running statment: $stmt\n"
+    print "statment: $stmt\n"
       if (exists $opts{d});
-    print $out "running statment: $stmt\n";
+    print $out "statment: $stmt\n";
 
     my $values_to_print = join ', ', @values, "\n";
     $values_to_print =~ s/,\s*$//;
 
-    print "values ", $values_to_print, "\n"
-      if (exists $opts{d});
-    print $out "values ", $values_to_print, "\n";
-
-    #    if (skip_value(\@ldap_attrs, \@insert_values)) {
-        if (skip_value($ldap_attrs, \@values)) {
+    unless ($stmt =~ /^\s*delete/i) {
+	print "values ", $values_to_print, "\n"
+	  if (exists $opts{d});
+	print $out "values ", $values_to_print, "\n";
+    }
+    if (skip_value($ldap_attrs, \@values)) {
 	my_print $out, "skipping ",  $values_to_print, "\n\n";
 	add_to_skipping($values_to_print);
     } else {
@@ -454,10 +468,17 @@ sub individual_db_stmt {
 	    die;
 	}
 	if (!exists $opts{n}) {
-	    #	    my $uk = get_unique_key(\@ldap_attrs, \@values);
 	    my $uk = get_unique_key($ldap_attrs, \@values);	    
-		    
-	    unless ($sth->execute(@values)) {
+
+	    my $rc;
+	    if ($stmt =~ /^\s*delete/i) {
+		$rc = $sth->execute();
+		print "rc: $rc\n";
+	    } else {
+		$rc = $sth->execute(@values)
+	    };
+#	      unless ($sth->execute(@values)) {
+	      unless ($rc) {		  
 		my_print $out, "problem executing statement: ", $sth->errstr, "\n";
 		my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
 		skip_next_time($uk);
