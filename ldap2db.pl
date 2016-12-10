@@ -260,7 +260,7 @@ sub _insert_entries {
 	my @values;
 	my $longest_attr_list=0;
 	my $i=0;
-	
+
 	for my $attr (@ldap_attrs) {
 	    my @attr_values = $entry->get_value($attr);
 
@@ -355,7 +355,6 @@ sub _insert_entries {
 
 		my $i = 0;
 		for (@insert_values) {
-		    print "working on /$insert_values[$i]/\n";
 		    if ($sql_types[$i] == 8) {
 			# sql double, convert to a number
 			$insert_values[$i] += 0;
@@ -363,9 +362,15 @@ sub _insert_entries {
 			# varchar, do nothing
 		    } elsif ($sql_types[$i] == 93) {
 			# timestamp
-			my $dt = DateTime::Format::LDAP->parse_datetime($insert_values[$i]);
-			$insert_values[$i] = DateTime::Format::Oracle->format_datetime($dt);
-#			print "oracle date? $insert_values[$i]\n";
+			my $dt;
+			eval {
+			    $dt = DateTime::Format::LDAP->parse_datetime($insert_values[$i]);
+			};
+			if ( $@ ) {
+			    $insert_values[$i] = "";
+			} else {
+			    $insert_values[$i] = DateTime::Format::Oracle->format_datetime($dt);
+			}
 		    } else {
 			die "unknown sql type $sql_types[$i].  This is because it needs to be added here.";
 		    }
