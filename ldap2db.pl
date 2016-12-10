@@ -181,6 +181,8 @@ sub _insert_entries {
     my %gen_attrs;
     my @ldap_attrs;
 
+    my (%in_ldap, %in_db);
+
     $insert_stmt =~ /insert\s+into\s+([^\(]+)\(([^\)]+)\)/i;
     my $insert_into = $1;
     my @db_cols = split /\s*,\s*/, $2;
@@ -207,7 +209,47 @@ sub _insert_entries {
 	$count2++
     }
 
-    my_print $out, "\nsearching ldap: $ldap_filter\n";
+
+    my @sql_types;
+    if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
+	my $sql = "SELECT " . join (', ', @db_cols) . " FROM " . $insert_into;
+
+	my $sth = $dbh->prepare($sql);
+	$sth->execute();
+
+	# http://docstore.mik.ua/orelly/linux/dbi/ch06_01.htm#FOOTNOTE-61
+	# see 'TYPE' in footnote comment at bottom of this script.
+
+	@sql_types = @{$sth->{TYPE}};
+	    
+	my $i=0;
+	while (my @row = $sth->fetchrow_array) {
+	    for (@row) {
+		$_ = ""
+		  if (!defined ($_));
+	    }
+
+	    my $index = join ' ', @row;
+	    # die "/$index/ already exists in \%in_db, this shouldn't happen"
+	    #   if (exists $in_db{$index});
+	    
+#	    print "inserting into in_db /$index/\n";
+	    $in_db{$index} = \@row;
+	}
+
+	# doesn't work, not sure why
+	#	    $sql = "SELECT NLS_DATE_FORMAT FROM NLS_SESSION_PARAMETERS";
+	#	    $sth = $dbh->prepare($sql);
+	#	    $sth-> execute();
+
+	# while (my @row = $sth->fetchrow_array) {
+	# 	print join (' ', @row);
+	# }
+	# exit;
+    }
+    
+
+    my_print $out, "searching ldap: $ldap_filter\n";
     my $rslt = $ldap->search(base=>$config{ldap_base}, filter=>$ldap_filter, attrs => [@ldap_attrs]);
     $rslt->code && die "problem searching: ", $rslt->error;
 
@@ -231,6 +273,8 @@ sub _insert_entries {
 	    # check for a normalize section in the config.
 	    # identify the attr with one or more regexes and run a
 	    # user-defined sub on it
+	    #
+	    # this should probably be replaced by gen: functionality
 	    if (exists $config{normalize}) {
 		for my $n (@{$config{normalize}}) {
 		    if (exists $n->{regex}) {
@@ -270,13 +314,8 @@ sub _insert_entries {
 	next
 	  if ($next);
 
-
-
-
-
 	my $j=0;
 	my $k=0;
-
 	while ($k <= $longest_attr_list) {
 	    my @insert_values;
 
@@ -300,135 +339,97 @@ sub _insert_entries {
 	    print $out "\n";
 
 
-	    
-	    # print $out "inserting into table: $insert_stmt\n";
+	    if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
+		# we were asked to diff so things get a little more complicated
+		# convert and save values in %in_ldap for comparison later
 
-	    # my $values_to_print = join ', ', @insert_values, "\n";
-	    # $values_to_print =~ s/,\s*$//;
-	    # print $out "values ", $values_to_print, "\n";
+		# http://alvinalexander.com/java/edu/pj/jdbc/recipes/ResultSet-ColumnType.shtml
+		#		$ENV{'NLS_DATE_FORMAT'} = 'YYYY-MM-DD HH24:MI:SS';
+		$ENV{'NLS_DATE_FORMAT'} = 'YYYY-MM-DD';
 
-	    # if (skip_value(\@ldap_attrs, \@insert_values)) {
-	    # 	my_print $out, "skipping ",  $values_to_print, "\n\n";
-	    # 	add_to_skipping($values_to_print);
-	    # } else {
-	    # 	my $insert_sth;
-	    # 	unless ($insert_sth = $dbh->prepare($insert_stmt)) {
-	    # 	    my_print $out, "problem preparing insert: " . $insert_sth->errstr;
-	    # 	    die;
-	    # 	}
-	    # 	if (!exists $opts{n}) {
-	    # 	    my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
+		if ($#insert_values != $#sql_types) {
+		    print "count of types does not match the count of values:\n";
+		    print Dumper @insert_values, "\n", Dumper @sql_types, "\n";
+		    die;
+		}
+
+		my $i = 0;
+		for (@insert_values) {
+		    print "working on /$insert_values[$i]/\n";
+		    if ($sql_types[$i] == 8) {
+			# sql double, convert to a number
+			$insert_values[$i] += 0;
+		    } elsif ($sql_types[$i] == 12) {
+			# varchar, do nothing
+		    } elsif ($sql_types[$i] == 93) {
+			# timestamp
+			my $dt = DateTime::Format::LDAP->parse_datetime($insert_values[$i]);
+			$insert_values[$i] = DateTime::Format::Oracle->format_datetime($dt);
+#			print "oracle date? $insert_values[$i]\n";
+		    } else {
+			die "unknown sql type $sql_types[$i].  This is because it needs to be added here.";
+		    }
+		    $i++;
+		}
+
+		my $index = join ' ', @insert_values;
+		die "/$index/ already exists in \%in_ldap, this shouldn't happen"
+		  if (exists $in_ldap{$index});
+
+		print "inserting into in_ldap /$index/\n";
+		$in_ldap{$index} = \@insert_values;
+	    } else {
+		# We weren't asked to diff so just do a straight insert of the data
+		print $out "inserting into table: $insert_stmt\n";
+
+		my $values_to_print = join ', ', @insert_values, "\n";
+		$values_to_print =~ s/,\s*$//;
+		print $out "values ", $values_to_print, "\n";
+
+		if (skip_value(\@ldap_attrs, \@insert_values)) {
+		    my_print $out, "skipping ",  $values_to_print, "\n\n";
+		    add_to_skipping($values_to_print);
+		} else {
+		    my $insert_sth;
+		    unless ($insert_sth = $dbh->prepare($insert_stmt)) {
+			my_print $out, "problem preparing insert: " . $insert_sth->errstr;
+			die;
+		    }
+		    if (!exists $opts{n}) {
+			my $uk = get_unique_key(\@ldap_attrs, \@insert_values);
 		    
-	    # 	    unless ($insert_sth->execute(@insert_values)) {
-	    # 		my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
-	    # 		my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
-	    # 		skip_next_time($uk);
-	    # 		return 1;
-	    # 	    }
-	    # 	}
-	    # 	$count++;
-	    # }
-
-
-
-
-	    
+			unless ($insert_sth->execute(@insert_values)) {
+			    my_print $out, "problem executing statement: ", $insert_sth->errstr, "\n";
+			    my_print $out, "pushing ", $uk, " onto entries_to_skip and restarting import\n";
+			    skip_next_time($uk);
+			    return 1;
+			}
+		    }
+		    $count++;
+		}
+	    }
 
 	    $k++;
 	}
 
 	my_print $out, "\n*****\n"
 	  if (exists $opts{d});
-
     }
 
 
 
+    if (!exists $config{only_insert_diffs} && $config{only_insert_diffs} !~ /yes/i) {
+	my_print $out, "$count entries inserted.\n\n";
+    }
+
+
+    print "compare hashes now...\n";
 
 
 
 
 
     
-	my @values_already_in_db;
-	my @sql_types;
-	if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
-	    my $sql = "SELECT " . join (', ', @db_cols) . " FROM " . $insert_into;
-
-	    my $sth = $dbh->prepare($sql);
-	    $sth->execute();
-
-	    # http://docstore.mik.ua/orelly/linux/dbi/ch06_01.htm#FOOTNOTE-61
-	    # see 'TYPE' in comments at bottom of this script.
-
-	    @sql_types = @{$sth->{TYPE}};
-	    
-	    my $i=0;
-	    while (my @row = $sth->fetchrow_array) {
-		$values_already_in_db[$i++] = \@row;
-	    }
-
-	    # doesn't work, not sure why
-#	    $sql = "SELECT NLS_DATE_FORMAT FROM NLS_SESSION_PARAMETERS";
-#	    $sth = $dbh->prepare($sql);
-#	    $sth-> execute();
-
-	    # while (my @row = $sth->fetchrow_array) {
-	    # 	print join (' ', @row);
-	    # }
-	    # exit;
-	}
-
-
-
-
-
-
-    	    
-	    if (exists $config{only_insert_diffs} && $config{only_insert_diffs} =~ /yes/i) {
-		# http://alvinalexander.com/java/edu/pj/jdbc/recipes/ResultSet-ColumnType.shtml
-		#		$ENV{'NLS_DATE_FORMAT'} = 'YYYY-MM-DD HH24:MI:SS';
-		$ENV{'NLS_DATE_FORMAT'} = 'YYYY-MM-DD';
-
-		for my $vals (@values_already_in_db) {
-		    if ($#$vals != $#sql_types) {
-			print "count of types does not match the count of values:\n";
-			print Dumper @$vals, "\n", Dumper @sql_types, "\n";
-			die;
-		    }
-
-		    for my $iv (@insert_values) {
-			$values_already_in_db[$i] = ""
-			  if (!defined($values_already_in_db[$i]));
-			
-			if ($sql_types[$i] == 8) {
-			    # sql double, convert to a number
-			    $$vals[$i] += 0;
-			} elsif ($sql_types[$i] == 12) {
-			    # varchar, do nothing
-			} elsif ($sql_types[$i] == 93) {
-			    # timestamp
-			    my $dt = DateTime::Format::LDAP->parse_datetime($insert_values[$i]);
-			    my $$vals[$i] = DateTime::Format::Oracle->format_datetime($dt);
-			}
-			$i++;
-		    
-		    }
-
-		}
-
-	    }
-
-
-
-
-
-
-
-
-
-    
-    my_print $out, "$count entries inserted.\n\n";
     return 0;
 }
 
@@ -532,6 +533,10 @@ sub print_usage {
 
 
 
+
+
+  # footnote
+  #
   # TYPE
   #     The TYPE attribute contains a reference to an array
   #     of integer values representing the international
